@@ -14,7 +14,8 @@
 
 ## التشغيل
 
-يتطلب Flutter وDart وإعداد Android SDK.
+يتطلب Flutter وDart وإعداد Android SDK. يتطلب بناء وتشغيل نسخة iOS جهاز macOS مع Xcode.
+تمت إضافة هدف iOS وإعدادات صلاحيات الصور والكاميرا، ويتحقق بناء iOS تلقائياً على macOS عبر GitHub Actions. لا يمكن اختبار التشغيل الفعلي على iPhone من Windows.
 
 ```bash
 flutter pub get
@@ -27,6 +28,12 @@ flutter run
 flutter analyze
 flutter test
 flutter build apk --release
+```
+
+لبناء iOS والتحقق منه على macOS:
+
+```bash
+flutter build ios --no-codesign
 ```
 
 ## البنية
