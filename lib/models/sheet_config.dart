@@ -118,22 +118,34 @@ class SlotPhoto {
     required this.image,
     this.fit = PhotoFit.cover,
     this.quarterTurns = 0,
+    this.scale = 1,
+    this.offsetX = 0,
+    this.offsetY = 0,
   });
 
   final XFile? image;
   final PhotoFit fit;
   final int quarterTurns;
+  final double scale;
+  final double offsetX;
+  final double offsetY;
 
   SlotPhoto copyWith({
     XFile? image,
     PhotoFit? fit,
     int? quarterTurns,
+    double? scale,
+    double? offsetX,
+    double? offsetY,
     bool clearImage = false,
   }) {
     return SlotPhoto(
       image: clearImage ? null : image ?? this.image,
       fit: fit ?? this.fit,
       quarterTurns: quarterTurns ?? this.quarterTurns,
+      scale: (scale ?? this.scale).clamp(1, 3),
+      offsetX: (offsetX ?? this.offsetX).clamp(-0.75, 0.75),
+      offsetY: (offsetY ?? this.offsetY).clamp(-0.75, 0.75),
     );
   }
 }

@@ -47,5 +47,17 @@ void main() {
       expect(config.columns, 1);
       expect(config.marginMm, 30);
     });
+
+    test('keeps photo zoom and pan inside safe editing bounds', () {
+      final photo = const SlotPhoto(image: null).copyWith(
+        scale: 4,
+        offsetX: -2,
+        offsetY: 2,
+      );
+
+      expect(photo.scale, 3);
+      expect(photo.offsetX, -0.75);
+      expect(photo.offsetY, 0.75);
+    });
   });
 }

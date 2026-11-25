@@ -33,16 +33,29 @@ class PdfExportService {
         final image = photo!.image!;
         final bytes = await (photoBytes[image.path] ??= image.readAsBytes());
         imageWidget = pw.ClipRect(
-          child: pw.Transform.rotate(
-            angle: photo.quarterTurns * math.pi / 2,
-            child: pw.SizedBox(
-              width: rect.widthMm * pointsPerMillimeter,
-              height: rect.heightMm * pointsPerMillimeter,
-              child: pw.Image(
-                pw.MemoryImage(bytes),
-                fit: photo.fit == PhotoFit.cover
-                    ? pw.BoxFit.cover
-                    : pw.BoxFit.contain,
+          child: pw.SizedBox(
+            width: rect.widthMm * pointsPerMillimeter,
+            height: rect.heightMm * pointsPerMillimeter,
+            child: pw.Transform.translate(
+              offset: PdfPoint(
+                photo.offsetX * rect.widthMm * pointsPerMillimeter,
+                -photo.offsetY * rect.heightMm * pointsPerMillimeter,
+              ),
+              child: pw.Transform.scale(
+                scale: photo.scale,
+                child: pw.Transform.rotate(
+                  angle: photo.quarterTurns * math.pi / 2,
+                  child: pw.SizedBox(
+                    width: rect.widthMm * pointsPerMillimeter,
+                    height: rect.heightMm * pointsPerMillimeter,
+                    child: pw.Image(
+                      pw.MemoryImage(bytes),
+                      fit: photo.fit == PhotoFit.cover
+                          ? pw.BoxFit.cover
+                          : pw.BoxFit.contain,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
