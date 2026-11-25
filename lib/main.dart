@@ -18,7 +18,7 @@ class MdPhotoApp extends StatelessWidget {
       title: 'MD Photo',
       debugShowCheckedModeBanner: false,
       locale: const Locale('ar'),
-      supportedLocales: const [Locale('ar'), Locale('en')],
+      supportedLocales: const [Locale('ar')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: ThemeData(
         useMaterial3: true,
