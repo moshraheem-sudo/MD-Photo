@@ -9,6 +9,6 @@ void main() {
 
     expect(find.text('رتّب صورك للطباعة'), findsOneWidget);
     expect(find.text('إضافة صور'), findsOneWidget);
-    expect(find.textContaining('A4'), findsOneWidget);
+    expect(find.text('A4  ·  210 × 297 مم'), findsOneWidget);
   });
 }

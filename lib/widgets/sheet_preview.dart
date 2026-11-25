@@ -1,9 +1,7 @@
-import 'dart:io';
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../models/sheet_config.dart';
+import 'photo_image_view.dart';
 
 class SheetPreview extends StatelessWidget {
   const SheetPreview({
@@ -11,6 +9,7 @@ class SheetPreview extends StatelessWidget {
     required this.photos,
     required this.selectedIndex,
     required this.onSlotTap,
+    required this.onSlotReorder,
     super.key,
   });
 
@@ -18,6 +17,7 @@ class SheetPreview extends StatelessWidget {
   final List<SlotPhoto> photos;
   final int? selectedIndex;
   final ValueChanged<int> onSlotTap;
+  final void Function(int fromIndex, int toIndex) onSlotReorder;
 
   @override
   Widget build(BuildContext context) {
@@ -82,12 +82,14 @@ class SheetPreview extends StatelessWidget {
                                         : gapX,
                                   ),
                                   child: _PhotoSlot(
+                                    index: index,
                                     photo: index < photos.length
                                         ? photos[index]
                                         : null,
                                     selected: selectedIndex == index,
                                     showCutLines: config.showCutLines,
                                     onTap: () => onSlotTap(index),
+                                    onReorder: onSlotReorder,
                                   ),
                                 ),
                               );
@@ -109,91 +111,115 @@ class SheetPreview extends StatelessWidget {
 
 class _PhotoSlot extends StatelessWidget {
   const _PhotoSlot({
+    required this.index,
     required this.photo,
     required this.selected,
     required this.showCutLines,
     required this.onTap,
+    required this.onReorder,
   });
 
+  final int index;
   final SlotPhoto? photo;
   final bool selected;
   final bool showCutLines;
   final VoidCallback onTap;
+  final void Function(int fromIndex, int toIndex) onReorder;
 
   @override
   Widget build(BuildContext context) {
     final hasPhoto = photo?.image != null;
-    final borderColor = selected
-        ? Theme.of(context).colorScheme.primary
-        : showCutLines
-        ? const Color(0x995B6864)
-        : const Color(0xFFE7ECEA);
-
-    return GestureDetector(
-      onTap: onTap,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: const Color(0xFFF5F7F6),
-          border: Border.all(color: borderColor, width: selected ? 2 : 0.8),
-        ),
-        child: ClipRect(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (hasPhoto)
-                Transform.rotate(
-                  angle: photo!.quarterTurns * math.pi / 2,
-                  child: Image.file(
-                    File(photo!.image!.path),
-                    fit: photo!.fit == PhotoFit.cover
-                        ? BoxFit.cover
-                        : BoxFit.contain,
-                    errorBuilder: (_, _, _) => const Center(
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.grey,
+    return LayoutBuilder(
+      builder: (context, constraints) => DragTarget<int>(
+        onWillAcceptWithDetails: (details) => details.data != index,
+        onAcceptWithDetails: (details) => onReorder(details.data, index),
+        builder: (context, candidates, _) {
+          final isDropTarget = candidates.isNotEmpty;
+          final borderColor = selected || isDropTarget
+              ? Theme.of(context).colorScheme.primary
+              : showCutLines
+              ? const Color(0x995B6864)
+              : const Color(0xFFE7ECEA);
+          final tile = GestureDetector(
+            onTap: onTap,
+            child: DecoratedBox(
+              key: ValueKey('photo-slot-$index'),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F7F6),
+                border: Border.all(
+                  color: borderColor,
+                  width: selected || isDropTarget ? 2 : 0.8,
+                ),
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (hasPhoto)
+                    PhotoImageView(photo: photo!)
+                  else
+                    Center(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFFE1E9E6)),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(5),
+                          child: Icon(
+                            Icons.add_rounded,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 19,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                )
-              else
-                Center(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFFE1E9E6)),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(5),
-                      child: Icon(
-                        Icons.add_rounded,
-                        color: Theme.of(context).colorScheme.primary,
-                        size: 19,
+                  if (selected && hasPhoto)
+                    Align(
+                      alignment: AlignmentDirectional.topStart,
+                      child: Container(
+                        margin: const EdgeInsets.all(4),
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: const Icon(
+                          Icons.tune_rounded,
+                          size: 12,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              if (selected && hasPhoto)
-                Align(
-                  alignment: AlignmentDirectional.topStart,
-                  child: Container(
-                    margin: const EdgeInsets.all(4),
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary,
-                      borderRadius: BorderRadius.circular(7),
+                  if (isDropTarget)
+                    const Center(
+                      child: Icon(
+                        Icons.swap_horiz_rounded,
+                        color: Colors.white,
+                        size: 32,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.tune_rounded,
-                      size: 12,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
+                ],
+              ),
+            ),
+          );
+          return LongPressDraggable<int>(
+            data: index,
+            maxSimultaneousDrags: hasPhoto ? 1 : 0,
+            feedback: Material(
+              elevation: 8,
+              borderRadius: BorderRadius.circular(8),
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(
+                width: constraints.maxWidth.clamp(72, 180).toDouble(),
+                height: constraints.maxHeight.clamp(72, 220).toDouble(),
+                child: PhotoImageView(photo: photo!),
+              ),
+            ),
+            childWhenDragging: Opacity(opacity: 0.25, child: tile),
+            child: tile,
+          );
+        },
       ),
     );
   }

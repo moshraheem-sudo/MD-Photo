@@ -6,10 +6,19 @@ import 'package:printing/printing.dart';
 
 import '../models/sheet_config.dart';
 import '../services/pdf_export_service.dart';
+import 'pdf_preview_screen.dart';
+import '../widgets/photo_editor_sheet.dart';
 import '../widgets/sheet_preview.dart';
 
 class EditorScreen extends StatefulWidget {
-  const EditorScreen({super.key});
+  const EditorScreen({
+    super.key,
+    this.initialConfig = const SheetConfig(),
+    this.initialPhotos = const [],
+  });
+
+  final SheetConfig initialConfig;
+  final List<SlotPhoto> initialPhotos;
 
   @override
   State<EditorScreen> createState() => _EditorScreenState();
@@ -38,10 +47,12 @@ class _EditorScreenState extends State<EditorScreen> {
   @override
   void initState() {
     super.initState();
-    _config = const SheetConfig();
+    _config = widget.initialConfig;
     _photos = List<SlotPhoto>.generate(
       _config.slotCount,
-      (_) => const SlotPhoto(image: null),
+      (index) => index < widget.initialPhotos.length
+          ? widget.initialPhotos[index]
+          : const SlotPhoto(image: null),
     );
   }
 
@@ -157,20 +168,67 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  void _updateSelectedPhoto(SlotPhoto updated) {
-    final index = _selectedIndex;
-    if (index == null) return;
-    _saveUndoPoint();
-    setState(() => _photos[index] = updated);
+  Future<XFile?> _pickPhotoForEditor(ImageSource source) async {
+    try {
+      return await _picker.pickImage(
+        source: source,
+        imageQuality: 94,
+        maxWidth: 3200,
+      );
+    } catch (error) {
+      if (mounted) _showMessage('تعذر فتح الصورة: $error');
+      return null;
+    }
   }
 
-  void _removeSelectedPhoto() {
-    final index = _selectedIndex;
-    if (index == null) return;
+  Future<void> _openPhotoEditor(int index) async {
+    setState(() => _selectedIndex = index);
+    final editedPhoto = await showModalBottomSheet<SlotPhoto>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (_) => PhotoEditorSheet(
+        photo: _photos[index],
+        slotNumber: index + 1,
+        slotAspectRatio: (_config.slotWidthMm / _config.slotHeightMm)
+            .clamp(0.55, 1.8)
+            .toDouble(),
+        onPickReplacement: _pickPhotoForEditor,
+      ),
+    );
+    if (editedPhoto == null || !mounted) return;
+
     _saveUndoPoint();
     setState(() {
-      _photos[index] = const SlotPhoto(image: null);
-      _selectedIndex = null;
+      _photos[index] = editedPhoto;
+      _selectedIndex = editedPhoto.image == null ? null : index;
+    });
+  }
+
+  void _reorderPhotos(int fromIndex, int toIndex) {
+    if (fromIndex == toIndex ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= _photos.length ||
+        toIndex >= _photos.length) {
+      return;
+    }
+
+    _saveUndoPoint();
+    setState(() {
+      final movedPhoto = _photos.removeAt(fromIndex);
+      _photos.insert(toIndex, movedPhoto);
+      final selectedIndex = _selectedIndex;
+      if (selectedIndex != null) {
+        if (selectedIndex == fromIndex) {
+          _selectedIndex = toIndex;
+        } else if (fromIndex < selectedIndex && toIndex >= selectedIndex) {
+          _selectedIndex = selectedIndex - 1;
+        } else if (fromIndex > selectedIndex && toIndex <= selectedIndex) {
+          _selectedIndex = selectedIndex + 1;
+        }
+      }
     });
   }
 
@@ -203,27 +261,116 @@ class _EditorScreenState extends State<EditorScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: _presets.map((preset) {
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _presets.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  childAspectRatio: 2.45,
+                ),
+                itemBuilder: (context, index) {
+                  final preset = _presets[index];
                   final selected =
                       _config.rows == preset.rows &&
                       _config.columns == preset.columns;
-                  return ChoiceChip(
-                    label: Text(preset.label),
-                    selected: selected,
-                    onSelected: (_) {
-                      _applyConfig(
-                        _config.copyWith(
-                          rows: preset.rows,
-                          columns: preset.columns,
+                  final colors = Theme.of(context).colorScheme;
+                  return Material(
+                    color: selected ? colors.primaryContainer : Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(
+                        color: selected
+                            ? colors.primary
+                            : const Color(0xFFE2E9E7),
+                        width: selected ? 1.5 : 1,
+                      ),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () {
+                        _applyConfig(
+                          _config.copyWith(
+                            rows: preset.rows,
+                            columns: preset.columns,
+                          ),
+                        );
+                        Navigator.pop(context);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 9,
                         ),
-                      );
-                      Navigator.pop(context);
-                    },
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 38,
+                              height: 36,
+                              child: GridView.count(
+                                physics: const NeverScrollableScrollPhysics(),
+                                crossAxisCount: preset.columns,
+                                crossAxisSpacing: 2,
+                                mainAxisSpacing: 2,
+                                children: List<Widget>.generate(
+                                  preset.rows * preset.columns,
+                                  (_) => DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: selected
+                                          ? colors.primary
+                                          : colors.primary.withValues(
+                                              alpha: 0.18,
+                                            ),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    preset.label,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          color: selected
+                                              ? colors.onPrimaryContainer
+                                              : colors.onSurface,
+                                        ),
+                                  ),
+                                  Text(
+                                    '${preset.rows} × ${preset.columns}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: colors.onSurfaceVariant,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (selected)
+                              Icon(
+                                Icons.check_circle_rounded,
+                                color: colors.primary,
+                                size: 19,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
                   );
-                }).toList(),
+                },
               ),
             ],
           ),
@@ -249,51 +396,49 @@ class _EditorScreenState extends State<EditorScreen> {
                   'إعدادات الطباعة',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 4),
+                Text(
+                  'اضبط حجم الصفحة واتجاهها وهوامش الطباعة.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 20),
                 Text(
                   'حجم الورق',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('A4'),
-                      selected: pending.paperSize == PaperSize.a4,
-                      onSelected: (_) => updateSheet(
-                        () =>
-                            pending = pending.copyWith(paperSize: PaperSize.a4),
-                      ),
-                    ),
-                    ChoiceChip(
-                      label: const Text('A5'),
-                      selected: pending.paperSize == PaperSize.a5,
-                      onSelected: (_) => updateSheet(
-                        () =>
-                            pending = pending.copyWith(paperSize: PaperSize.a5),
-                      ),
-                    ),
-                    ChoiceChip(
-                      label: const Text('مخصص'),
-                      selected: pending.paperSize == PaperSize.custom,
-                      onSelected: (_) async {
-                        final size = await _askCustomSize(
-                          pending.customWidthMm,
-                          pending.customHeightMm,
-                        );
-                        if (size != null) {
-                          updateSheet(
-                            () => pending = pending.copyWith(
-                              paperSize: PaperSize.custom,
-                              customWidthMm: size.$1,
-                              customHeightMm: size.$2,
-                            ),
-                          );
-                        }
-                      },
-                    ),
+                SegmentedButton<PaperSize>(
+                  segments: const [
+                    ButtonSegment(value: PaperSize.a4, label: Text('A4')),
+                    ButtonSegment(value: PaperSize.a5, label: Text('A5')),
+                    ButtonSegment(value: PaperSize.custom, label: Text('مخصص')),
                   ],
+                  selected: {pending.paperSize},
+                  onSelectionChanged: (selection) async {
+                    final size = selection.first;
+                    if (size != PaperSize.custom) {
+                      updateSheet(
+                        () => pending = pending.copyWith(paperSize: size),
+                      );
+                      return;
+                    }
+
+                    final dimensions = await _askCustomSize(
+                      pending.customWidthMm,
+                      pending.customHeightMm,
+                    );
+                    if (dimensions != null) {
+                      updateSheet(
+                        () => pending = pending.copyWith(
+                          paperSize: PaperSize.custom,
+                          customWidthMm: dimensions.$1,
+                          customHeightMm: dimensions.$2,
+                        ),
+                      );
+                    }
+                  },
                 ),
                 if (pending.paperSize == PaperSize.custom)
                   Padding(
@@ -320,32 +465,9 @@ class _EditorScreenState extends State<EditorScreen> {
                     () => pending = pending.copyWith(landscape: value.first),
                   ),
                 ),
-                const SizedBox(height: 18),
-                Text(
-                  'التخطيط · ${pending.rows} × ${pending.columns}',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _presets.map((preset) {
-                    final selected =
-                        pending.rows == preset.rows &&
-                        pending.columns == preset.columns;
-                    return ChoiceChip(
-                      label: Text(preset.label),
-                      selected: selected,
-                      onSelected: (_) => updateSheet(
-                        () => pending = pending.copyWith(
-                          rows: preset.rows,
-                          columns: preset.columns,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 20),
+                const Divider(height: 1),
+                const SizedBox(height: 16),
                 _SettingSlider(
                   title: 'الهامش · ${pending.marginMm.toStringAsFixed(0)} مم',
                   value: pending.marginMm,
@@ -485,6 +607,15 @@ class _EditorScreenState extends State<EditorScreen> {
               const Text('PDF بالحجم الفعلي للورق، جاهز للطباعة أو المشاركة.'),
               const SizedBox(height: 16),
               ListTile(
+                leading: const Icon(Icons.preview_outlined),
+                title: const Text('معاينة ملف الطباعة'),
+                subtitle: const Text('راجع شكل الورقة قبل الحفظ أو الطباعة'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _previewPdf();
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.print_outlined),
                 title: const Text('طباعة'),
                 subtitle: const Text('اختر الطابعة وإعدادات الطباعة'),
@@ -504,6 +635,22 @@ class _EditorScreenState extends State<EditorScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _previewPdf() async {
+    if (_filledSlots == 0) {
+      _showMessage('أضف صورة واحدة على الأقل لمعاينة ملف الطباعة.');
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PdfPreviewScreen(
+          config: _config,
+          photos: List<SlotPhoto>.of(_photos),
         ),
       ),
     );
@@ -549,9 +696,6 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedPhoto = _selectedIndex == null
-        ? null
-        : _photos[_selectedIndex!];
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 18,
@@ -624,13 +768,14 @@ class _EditorScreenState extends State<EditorScreen> {
                       config: _config,
                       photos: _photos,
                       selectedIndex: _selectedIndex,
+                      onSlotReorder: _reorderPhotos,
                       onSlotTap: (index) {
                         final photo = _photos[index];
                         if (photo.image == null) {
                           setState(() => _selectedIndex = index);
                           _pickOne(slotIndex: index);
                         } else {
-                          setState(() => _selectedIndex = index);
+                          _openPhotoEditor(index);
                         }
                       },
                     ),
@@ -648,15 +793,23 @@ class _EditorScreenState extends State<EditorScreen> {
                             ),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        _filledSlots > 1
+                            ? 'اضغط على الصورة لتعديلها · اضغط مطولاً واسحب لترتيبها'
+                            : 'اضغط على الصورة لتعديلها',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     _buildMainActions(context),
-                    if (selectedPhoto?.image != null) ...[
-                      const SizedBox(height: 12),
-                      _buildPhotoControls(context, selectedPhoto!),
-                    ],
                     const SizedBox(height: 12),
                     _buildLayoutAndSettings(context),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
                     _buildExportButton(context),
                   ],
                 ),
@@ -690,7 +843,7 @@ class _EditorScreenState extends State<EditorScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'اختر الصور، اضبط التخطيط، وصدّرها بدقة عالية.',
+                'المس أي صورة لتعديل القصّ أو التكبير أو الاتجاه.',
                 style: Theme.of(context).textTheme.bodyMedium
                     ?.copyWith(color: colorScheme.onSurfaceVariant),
               ),
@@ -796,8 +949,26 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
-  void _clearSheet() {
+  Future<void> _clearSheet() async {
     if (_filledSlots == 0) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('مسح جميع الصور؟'),
+        content: const Text('سيتم حذف الصور من الورقة، ويمكنك التراجع بعدها.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('مسح الصور'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     _saveUndoPoint();
     setState(() {
       _photos = List<SlotPhoto>.generate(
@@ -808,125 +979,91 @@ class _EditorScreenState extends State<EditorScreen> {
     });
   }
 
-  Widget _buildPhotoControls(BuildContext context, SlotPhoto photo) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'تعديل الصورة ${(_selectedIndex ?? 0) + 1}',
-              style: Theme.of(context).textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: () => _updateSelectedPhoto(
-                    photo.copyWith(
-                      fit: photo.fit == PhotoFit.cover
-                          ? PhotoFit.contain
-                          : PhotoFit.cover,
-                    ),
-                  ),
-                  icon: Icon(
-                    photo.fit == PhotoFit.cover
-                        ? Icons.fit_screen_outlined
-                        : Icons.crop_rounded,
-                  ),
-                  label: Text(
-                    photo.fit == PhotoFit.cover
-                        ? 'احتواء الصورة'
-                        : 'ملء الإطار',
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _updateSelectedPhoto(
-                    photo.copyWith(quarterTurns: (photo.quarterTurns + 1) % 4),
-                  ),
-                  icon: const Icon(Icons.rotate_right_rounded),
-                  label: const Text('تدوير'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _pickOne(slotIndex: _selectedIndex!),
-                  icon: const Icon(Icons.swap_horiz_rounded),
-                  label: const Text('استبدال'),
-                ),
-                IconButton(
-                  tooltip: 'حذف الصورة',
-                  onPressed: _removeSelectedPhoto,
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  color: Theme.of(context).colorScheme.error,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildLayoutAndSettings(BuildContext context) {
     final selected = _presets.where(
       (preset) =>
           preset.rows == _config.rows && preset.columns == _config.columns,
     );
     final label = selected.isEmpty ? 'مخصص' : selected.first.label;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              child: Icon(
+                Icons.grid_view_rounded,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            title: const Text('تقسيم الصور'),
+            subtitle: Text('$label · ${_config.rows} × ${_config.columns}'),
+            trailing: const Icon(Icons.chevron_left_rounded),
+            onTap: _showLayoutPicker,
+          ),
+          const Divider(height: 1, indent: 18, endIndent: 18),
+          ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+              child: Icon(
+                Icons.straighten_rounded,
+                color: Theme.of(context).colorScheme.onSecondaryContainer,
+              ),
+            ),
+            title: const Text('مقاس الورق والطباعة'),
+            subtitle: Text(
+              '$_paperSizeLabel · ${_config.landscape ? 'أفقي' : 'عمودي'} · '
+              '${_config.marginMm.round()} مم هامش',
+            ),
+            trailing: const Icon(Icons.chevron_left_rounded),
+            onTap: _showSettings,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExportButton(BuildContext context) {
     return Row(
       children: [
         Expanded(
           child: OutlinedButton.icon(
-            onPressed: _showLayoutPicker,
-            icon: const Icon(Icons.grid_view_rounded),
-            label: Text(label, overflow: TextOverflow.ellipsis),
+            onPressed: _filledSlots == 0 ? null : _previewPdf,
+            icon: const Icon(Icons.preview_outlined),
+            label: const Text('معاينة PDF'),
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
+              minimumSize: const Size.fromHeight(54),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(15),
               ),
             ),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: OutlinedButton.icon(
-            onPressed: _showSettings,
-            icon: const Icon(Icons.straighten_rounded),
-            label: const Text('إعدادات الورق'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
+          child: FilledButton.icon(
+            onPressed: _isExporting ? null : _showExportOptions,
+            icon: _isExporting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.print_outlined),
+            label: Text(_isExporting ? 'جارٍ التجهيز…' : 'حفظ وطباعة'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF163A35),
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(54),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(15),
               ),
+              textStyle: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildExportButton(BuildContext context) {
-    return FilledButton.icon(
-      onPressed: _isExporting ? null : _showExportOptions,
-      icon: _isExporting
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.picture_as_pdf_outlined),
-      label: Text(_isExporting ? 'جارٍ تجهيز الملف…' : 'تصدير PDF أو طباعة'),
-      style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFF163A35),
-        foregroundColor: Colors.white,
-        minimumSize: const Size.fromHeight(54),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        textStyle: const TextStyle(fontWeight: FontWeight.w700),
-      ),
     );
   }
 }
