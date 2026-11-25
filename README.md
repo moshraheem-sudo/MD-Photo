@@ -17,7 +17,7 @@
 ## التشغيل
 
 يتطلب Flutter وDart وإعداد Android SDK. يتطلب بناء وتشغيل نسخة iOS جهاز macOS مع Xcode.
-تمت إضافة هدف iOS وإعدادات صلاحيات الصور والكاميرا، ويتحقق بناء iOS تلقائياً على macOS عبر GitHub Actions. لا يمكن اختبار التشغيل الفعلي على iPhone من Windows.
+تمت إضافة هدف iOS وإعدادات صلاحيات الصور والكاميرا. يبني GitHub Actions نسخة iOS ونسخة لمحاكي iOS، ويرفع نسخة المحاكي كملف `md-photo-ios-simulator` قابل للتنزيل من صفحة تشغيل workflow. نسخة المحاكي تعمل على macOS مع Xcode فقط، ولا تُثبّت على iPhone فعلي.
 
 ```bash
 flutter pub get

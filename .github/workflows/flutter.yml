@@ -30,3 +30,11 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build ios --no-codesign
+      - run: flutter build ios --simulator --no-codesign
+      - run: ditto -c -k --sequesterRsrc --keepParent build/ios/iphonesimulator/Runner.app md-photo-ios-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: md-photo-ios-simulator
+          path: md-photo-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 30
